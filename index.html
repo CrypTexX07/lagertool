@@ -62,7 +62,8 @@ const norm=s=>String(s||"").toLowerCase().replace(/[\s\-_.\/]/g,"");
 async function api(path,opt={}){
   const r=await fetch(URL_+path,{...opt,headers:{...H,...(opt.headers||{})}});
   if(!r.ok)throw new Error(r.status+" "+(await r.text()).slice(0,150));
-  return r.status===204?null:r.json();
+  const t=await r.text();
+  return t?JSON.parse(t):null;
 }
 async function load(){
   try{ALL=await api("/lager?select=*&order=bezeichnung.asc");render();}
