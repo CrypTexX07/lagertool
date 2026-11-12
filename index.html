@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lager-Tool</title>
+<style>
+:root{--bg:#f4f5f7;--card:#fff;--tx:#14181f;--mut:#5d6675;--line:#dfe3e9;--ac:#0b5cab;--red:#c62828;--redbg:#fdecec;--ok:#1b7a3a}
+@media(prefers-color-scheme:dark){:root{--bg:#101318;--card:#1a1f27;--tx:#eef1f5;--mut:#9aa4b2;--line:#2b323d;--ac:#5aa6f0;--red:#ff6b6b;--redbg:#3a1b1b;--ok:#5fd18a}}
+*{box-sizing:border-box}
+body{margin:0;font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--tx)}
+header{position:sticky;top:0;z-index:5;background:var(--bg);padding:12px 14px 8px;border-bottom:1px solid var(--line)}
+h1{font-size:20px;margin:0 0 8px}
+#q{width:100%;font-size:17px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--tx)}
+main{max-width:820px;margin:0 auto;padding:12px 14px 60px}
+#alarm{background:var(--redbg);border:2px solid var(--red);color:var(--red);border-radius:10px;padding:10px 12px;margin-bottom:12px;font-weight:600}
+#alarm small{display:block;font-weight:400;margin-top:4px;color:var(--tx)}
+#alarm button{all:unset;cursor:pointer;text-decoration:underline}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:8px;cursor:pointer;display:flex;justify-content:space-between;gap:10px;align-items:center}
+.card.zero{border-color:var(--red);border-width:2px}
+.card b{font-size:17px}.card .sub{color:var(--mut);font-size:14px}
+.badge{min-width:54px;text-align:center;border-radius:8px;padding:6px 8px;font-weight:700;background:var(--bg)}
+.badge.zero{background:var(--red);color:#fff}
+.back{all:unset;cursor:pointer;color:var(--ac);padding:6px 0;display:inline-block;margin-bottom:6px}
+h2{font-size:22px;margin:4px 0 2px}
+section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:10px 0}
+section h3{margin:0 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut)}
+dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:6px 14px}
+dt{color:var(--mut)}dd{margin:0;font-weight:500}
+.dash{color:var(--mut)}
+.part{display:flex;gap:10px;padding:5px 0;border-bottom:1px dashed var(--line)}.part:last-child{border:0}
+.part code{min-width:78px;font-weight:700;color:var(--ac)}
+.stock{font-size:34px;font-weight:800}.stock.zero{color:var(--red)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px}
+input.s,textarea{font:inherit;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--tx)}
+input.s{width:90px}input.n{flex:1;min-width:120px;width:auto}
+textarea{width:100%;min-height:80px}
+button.b{font:inherit;font-weight:600;padding:10px 16px;border:0;border-radius:8px;background:var(--ac);color:#fff;cursor:pointer}
+button.b.out{background:var(--red)}button.b.in{background:var(--ok)}
+.hist{font-size:14px;color:var(--mut);margin-top:8px}
+.msg{color:var(--mut);padding:20px;text-align:center}
+.err{color:var(--red)}
+.hint{font-size:13px;color:var(--mut);margin-top:6px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Lager-Tool</h1>
+  <input id="q" type="search" placeholder="Lager suchen, z. B. 6205 oder S6006" autocomplete="off">
+</header>
+<main id="app"><div class="msg">Lade …</div></main>
+<script>
+const URL_="https://cxgpmuvkmzmpndjomjtn.supabase.co/rest/v1";
+const KEY="sb_publishable_RKblhH7WjLftHjsQH7a_CA_-2rZD_hP";
+const H={apikey:KEY,"Content-Type":"application/json"};
+let ALL=[],CUR=null;
+const $=s=>document.querySelector(s),app=$("#app"),q=$("#q");
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const val=v=>v==null||v===""?'<span class="dash">–</span>':esc(v);
+const norm=s=>String(s||"").toLowerCase().replace(/[\s\-_.\/]/g,"");
+
+async function api(path,opt={}){
+  const r=await fetch(URL_+path,{...opt,headers:{...H,...(opt.headers||{})}});
+  if(!r.ok)throw new Error(r.status+" "+(await r.text()).slice(0,150));
+  return r.status===204?null:r.json();
+}
+async function load(){
+  try{ALL=await api("/lager?select=*&order=bezeichnung.asc");render();}
+  catch(e){app.innerHTML='<div class="msg err">Fehler beim Laden: '+esc(e.message)+'</div>';}
+}
+
+/* ---------- Bezeichnung erklären ---------- */
+function explain(name){
+  const out=[];let s=name.toUpperCase().replace(/\s+/g," ").trim();
+  let m=s.match(/^(SS|S|W)[\s\-]?(?=\d)/);
+  if(m){out.push([m[1],m[1]==="W"?"Edelstahl (SKF-Kennzeichnung)":"Edelstahl (rostfrei)"]);s=s.slice(m[0].length);}
+  m=s.match(/^(\d{3,5})/);
+  if(m){
+    const n=m[1];s=s.slice(n.length);
+    let t=null,bore=null;
+    if(/^(60|62|63|64)\d\d$/.test(n)||/^(618|619|160)\d\d$/.test(n)||/^16\d{3}$/.test(n)){
+      const ser=n.length===4?n.slice(0,2):n.slice(0,3);
+      const names={"60":"Rillenkugellager, Reihe 60 (leicht)","62":"Rillenkugellager, Reihe 62 (mittel)","63":"Rillenkugellager, Reihe 63 (schwer)","64":"Rillenkugellager, Reihe 64","618":"Rillenkugellager, Reihe 618 (extra dünn)","619":"Rillenkugellager, Reihe 619 (dünn)","160":"Rillenkugellager, Reihe 160 (dünn)","161":"Rillenkugellager, Reihe 161 (dünn)"};
+      t=names[ser]||(n.startsWith("16")?"Rillenkugellager, Reihe "+n.slice(0,3):null);
+      const b=parseInt(n.slice(-2),10);
+      bore=b===0?10:b===1?12:b===2?15:b===3?17:b*5;
+      if(n.length===3){t="Rillenkugellager, Miniatur";bore=parseInt(n.slice(-1),10);}
+    }else if(/^22\d\d$/.test(n)||/^12\d\d$/.test(n)){t="Pendelkugellager (selbstausrichtend)";const b=parseInt(n.slice(-2),10);bore=b<4?[10,12,15,17][b]:b*5;}
+    else if(/^32\d{3}$/.test(n)){t="Kegelrollenlager";bore=parseInt(n.slice(-2),10)*5;}
+    else if(/^32\d\d$/.test(n)||/^33\d\d$/.test(n)){t="Zweireihiges Schrägkugellager";bore=parseInt(n.slice(-2),10)*5;}
+    else if(/^3\d{3}$/.test(n)){t="Zweireihiges Schrägkugellager";bore=parseInt(n.slice(-2),10)*5;}
+    out.push([n,(t||"Grundnummer")+(bore?" · Bohrung "+bore+" mm":"")]);
+  }
+  const sfx=[
+    [/^[\s\-\/]*2RSR/,"2RSR","Dichtung beidseitig, berührend (FAG/Schaeffler)"],
+    [/^[\s\-\/]*2RS1/,"2RS1","Dichtung beidseitig, berührend (SKF)"],
+    [/^[\s\-\/]*2RSH/,"2RSH","Dichtung beidseitig, berührend (SKF, älter)"],
+    [/^[\s\-\/]*2RS/,"2RS","Dichtung beidseitig, berührend"],
+    [/^[\s\-\/]*RS/,"RS","Dichtung (berührend)"],
+    [/^[\s\-\/]*DDU/,"DDU","Dichtung beidseitig, berührend (NSK)"],
+    [/^[\s\-\/]*LLU/,"LLU","Dichtung beidseitig, berührend (NTN)"],
+    [/^[\s\-\/]*NSE/,"NSE","Dichtung berührend (Nachi)"],
+    [/^[\s\-\/]*2Z/,"2Z","Deckscheibe aus Metall, beidseitig"],
+    [/^[\s\-\/]*Z/,"Z","Deckscheibe aus Metall"],
+    [/^[\s\-\/]*HLC/,"HLC","Schaeffler-Logistikcode (keine Fettangabe)"],
+    [/^[\s\-\/]*TVH/,"TVH","Käfig aus Polyamid (Kunststoff)"],
+    [/^[\s\-\/]*TV/,"TV","Käfig aus Polyamid"],
+    [/^[\s\-\/]*C3/,"C3","Lagerluft größer als normal"],
+    [/^[\s\-\/]*XL/,"XL","X-life (höhere Tragfähigkeit)"],
+    [/^[\s\-\/]*FD/,"FD","Food-Programm (lebensmitteltaugliches Fett)"],
+    [/^[\s\-\/]*MAE/,"MAE","Hersteller-Zusatz (unbekannt)"],
+    [/^[\s\-\/]*X\b/,"X","Ausführung X (Schaeffler)"],
+    [/^[\s\-\/]*B\b/,"B","Ausführung B"],
+    [/^[\s\-\/]*A\b/,"A","Ausführung A"],
+    [/^[\s\-\/]*(26)/,"26","Hersteller-Kürzel (unbekannt)"],
+    [/^[\s\-\/]*#E/,"#E","Ausführungskennzeichen E"],
+  ];
+  let guard=0;
+  while(s.replace(/^[\s\-\/]+/,"")&&guard++<8){
+    let hit=false;
+    for(const [re,c,d] of sfx){const mm=s.match(re);if(mm){out.push([c,d]);s=s.slice(mm[0].length);hit=true;break;}}
+    if(!hit){const rest=s.replace(/^[\s\-\/]+/,"");if(rest)out.push([rest,"nicht erkannt – siehe Hinweis oder Herstellerkatalog"]);break;}
+  }
+  return out;
+}
+
+/* ---------- Liste ---------- */
+function filtered(){
+  const t=norm(q.value);
+  if(!t)return ALL;
+  return ALL.filter(l=>norm(l.bezeichnung).includes(t)||norm(l.hersteller).includes(t)||norm(l.lagertyp).includes(t));
+}
+function render(){
+  if(CUR){return renderDetail();}
+  const zero=ALL.filter(l=>l.bestand===0);
+  let h="";
+  if(zero.length){
+    h+='<div id="alarm">⚠ '+zero.length+' Lager mit Bestand 0: '+zero.map(l=>esc(l.bezeichnung)).join(", ")+
+       '<small>Es sind gerade 0 Stück da. <button id="fz">Nur diese anzeigen</button></small></div>';
+  }
+  const list=window.ONLYZERO?zero:filtered();
+  if(!list.length)h+='<div class="msg">Nichts gefunden.</div>';
+  for(const l of list){
+    const z=l.bestand===0;
+    h+='<div class="card'+(z?" zero":"")+'" data-id="'+l.id+'"><div><b>'+esc(l.bezeichnung)+'</b><div class="sub">'+esc(l.hersteller||"")+" · "+esc(l.lagertyp||"")+
+       ((l.innen_mm&&l.aussen_mm)?" · "+esc(l.innen_mm)+"×"+esc(l.aussen_mm)+"×"+esc(l.breite_mm||"–"):"")+'</div></div><div class="badge'+(z?" zero":"")+'">'+(z?"0 da":l.bestand+" Stk")+"</div></div>";
+  }
+  app.innerHTML=h;
+  const fz=$("#fz");if(fz)fz.onclick=()=>{window.ONLYZERO=!window.ONLYZERO;render();};
+  app.querySelectorAll(".card").forEach(c=>c.onclick=()=>{CUR=ALL.find(x=>x.id==c.dataset.id);scrollTo(0,0);render();});
+}
+q.addEventListener("input",()=>{if(CUR)CUR=null;window.ONLYZERO=false;render();});
+
+/* ---------- Detail ---------- */
+async function renderDetail(){
+  const l=CUR,z=l.bestand===0;
+  const ex=explain(l.bezeichnung);
+  const rep=[["SKF",l.ersatz_skf],["FAG",l.ersatz_fag],["NSK",l.ersatz_nsk],["NTN",l.ersatz_ntn],["INA",l.ersatz_ina]];
+  let h='<button class="back" id="bk">← Zurück zur Liste</button><h2>'+esc(l.bezeichnung)+'</h2><div class="sub" style="color:var(--mut)">'+esc(l.hersteller||"")+" · "+esc(l.lagertyp||"")+"</div>";
+  h+='<section><h3>Bestand</h3>'+(z?'<div class="err" style="font-weight:700">⚠ Es sind gerade 0 da!</div>':"")+'<div class="stock'+(z?" zero":"")+'">'+l.bestand+' Stück</div>'+
+     '<div class="row"><input class="s n" id="nm" placeholder="Dein Name" maxlength="30"><input class="s" id="mg" type="number" min="1" value="1" inputmode="numeric"></div>'+
+     '<div class="row"><button class="b in" id="zu">+ Zugang</button><button class="b out" id="en">− Entnahme</button></div><div id="bm" class="hint"></div><div class="hist" id="hs"></div></section>';
+  h+='<section><h3>Bezeichnung erklärt</h3>'+ex.map(p=>'<div class="part"><code>'+esc(p[0])+'</code><span>'+esc(p[1])+'</span></div>').join("")+'</section>';
+  h+='<section><h3>Technische Daten</h3><dl>'+
+     '<dt>Innendurchmesser d</dt><dd>'+val(l.innen_mm&&l.innen_mm+" mm")+'</dd>'+
+     '<dt>Außendurchmesser D</dt><dd>'+val(l.aussen_mm&&l.aussen_mm+" mm")+'</dd>'+
+     '<dt>Breite B</dt><dd>'+val(l.breite_mm&&l.breite_mm+" mm")+'</dd>'+
+     '<dt>Dichtung</dt><dd>'+val(l.dichtung)+'</dd>'+
+     '<dt>Tragzahl dyn. Cr</dt><dd>'+val(l.cr_kn&&l.cr_kn+" kN")+'</dd>'+
+     '<dt>Tragzahl stat. C0r</dt><dd>'+val(l.c0r_kn&&l.c0r_kn+" kN")+'</dd>'+
+     '<dt>Grenzdrehzahl</dt><dd>'+val(l.grenzdrehzahl&&l.grenzdrehzahl+" 1/min")+'</dd>'+
+     '<dt>Gewicht</dt><dd>'+val(l.gewicht_kg&&l.gewicht_kg+" kg")+'</dd>'+
+     '<dt>Temperatur</dt><dd>'+val(l.temperatur&&l.temperatur+" °C")+'</dd></dl>'+
+     (l.hinweis?'<div class="hint">Hinweis: '+esc(l.hinweis)+'</div>':"")+'</section>';
+  h+='<section><h3>Ersatzlager</h3><dl>'+rep.map(r=>'<dt>'+r[0]+'</dt><dd>'+val(r[1])+'</dd>').join("")+'</dl><div class="hint">Nach Namensschema abgeleitet, vor dem Bestellen prüfen (Maße, Dichtung, Edelstahl).</div></section>';
+  h+='<section><h3>Notiz</h3><textarea id="nt" placeholder="Eigene Notiz zu diesem Lager">'+esc(l.notiz||"")+'</textarea><div class="row"><button class="b" id="sn">Notiz speichern</button><span id="nm2" class="hint"></span></div></section>';
+  app.innerHTML=h;
+  $("#bk").onclick=()=>{CUR=null;render();};
+  const nm=$("#nm");try{nm.value=localStorage.getItem("lt_name")||"";}catch(e){}
+  const msg=t=>{$("#bm").textContent=t;};
+  async function book(art){
+    const mg=parseInt($("#mg").value,10),name=nm.value.trim();
+    if(!(mg>0))return msg("Bitte Menge eingeben.");
+    if(!name)return msg("Bitte deinen Namen eingeben.");
+    try{localStorage.setItem("lt_name",name);}catch(e){}
+    let neu=l.bestand+(art==="Zugang"?mg:-mg);
+    if(neu<0)return msg("So viele sind nicht da (Bestand "+l.bestand+").");
+    try{
+      const r=await api("/lager?id=eq."+l.id,{method:"PATCH",headers:{Prefer:"return=representation"},body:JSON.stringify({bestand:neu})});
+      await api("/buchungen",{method:"POST",body:JSON.stringify({lager_id:l.id,art,menge:mg,name})});
+      Object.assign(l,r[0]);renderDetail();
+    }catch(e){msg("Fehler: "+e.message);}
+  }
+  $("#zu").onclick=()=>book("Zugang");$("#en").onclick=()=>book("Entnahme");
+  $("#sn").onclick=async()=>{
+    try{const r=await api("/lager?id=eq."+l.id,{method:"PATCH",headers:{Prefer:"return=representation"},body:JSON.stringify({notiz:$("#nt").value})});l.notiz=r[0].notiz;$("#nm2").textContent="Gespeichert ✓";}
+    catch(e){$("#nm2").textContent="Fehler: "+e.message;}
+  };
+  try{
+    const b=await api("/buchungen?lager_id=eq."+l.id+"&order=created_at.desc&limit=5");
+    $("#hs").innerHTML=b.length?"<b>Letzte Buchungen</b><br>"+b.map(x=>new Date(x.created_at).toLocaleString("de-DE",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})+" · "+(x.art==="Zugang"?"+":"−")+x.menge+" · "+esc(x.name||"")).join("<br>"):"";
+  }catch(e){}
+}
+load();
+</script>
+</body>
+</html>
